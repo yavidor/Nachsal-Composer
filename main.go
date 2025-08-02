@@ -84,7 +84,7 @@ func registerMessage(soldiers []*Soldier) func(*WhatsappService, *events.Message
 	}
 }
 
-const BEGINNING_MESSAGE = "היי, הכל בסדר?"
+const BEGINNING_MESSAGE = "היי, מתת מהטיל?"
 
 func sendBeginningMessage(s *WhatsappService, soldiers []*Soldier) error {
 	for _, soldier := range soldiers {
