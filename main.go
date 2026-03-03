@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,19 +32,22 @@ type Soldier struct {
 }
 
 func composeMessage(soldiers []*Soldier) string {
-	output := ""
+	var output strings.Builder
 	for index, soldier := range soldiers {
-		output += fmt.Sprintf("*%s*\n%s\n", soldier.name, "תקין")
+		fmt.Fprintf(&output, "*%s*\n%s\n", soldier.name, "תקין")
 		if index != len(soldiers)-1 {
-			output += "--------------------\n"
+			output.WriteString("--------------------\n")
 		}
 	}
-	return output
+	return output.String()
 }
 
 func getSoldierAuthor(msg *events.Message, soldiers []*Soldier) *Soldier {
+	fmt.Printf("###%s###\n", msg.Info.Sender.User)
+	fmt.Printf("###%#v###\n", msg.Info.SenderAlt)
 	for _, soldier := range soldiers {
-		if soldier.jid.User == msg.Info.Sender.User {
+		if soldier.jid.User == msg.Info.SenderAlt.User {
+			fmt.Printf("%sa\n", soldier.jid.User)
 			return soldier
 		}
 	}
@@ -61,6 +66,7 @@ func allSoldiersAnswered(soldiers []*Soldier) bool {
 func reactWithLike(soldiers []*Soldier) func(*WhatsappService, *events.Message) error {
 	return func(s *WhatsappService, msg *events.Message) error {
 		if soldier := getSoldierAuthor(msg, soldiers); soldier != nil && soldier.message == "" && msg.Info.Timestamp.After(timestamp) {
+			fmt.Println("LIKE")
 			err := s.React(soldier.jid, msg.Info.Chat, msg.Info.ID, "👍")
 			return err
 		}
@@ -70,7 +76,9 @@ func reactWithLike(soldiers []*Soldier) func(*WhatsappService, *events.Message) 
 
 func registerMessage(soldiers []*Soldier) func(*WhatsappService, *events.Message) error {
 	return func(s *WhatsappService, msg *events.Message) error {
+		fmt.Println("Registerd")
 		if soldier := getSoldierAuthor(msg, soldiers); soldier != nil && soldier.message == "" && msg.Info.Timestamp.After(timestamp) {
+			fmt.Println("From Soldier")
 			var content string
 			if msg.Message.ExtendedTextMessage == nil {
 				content = msg.Message.GetConversation()
@@ -84,9 +92,10 @@ func registerMessage(soldiers []*Soldier) func(*WhatsappService, *events.Message
 	}
 }
 
-const BEGINNING_MESSAGE = "היי, מתת מהטיל?"
+const BEGINNING_MESSAGE = "אוהבתך"
 
 func sendBeginningMessage(s *WhatsappService, soldiers []*Soldier) error {
+	fmt.Println("Hello")
 	for _, soldier := range soldiers {
 		err := s.SendMessage(BEGINNING_MESSAGE, soldier.jid.User, false)
 		if err != nil {
@@ -98,6 +107,7 @@ func sendBeginningMessage(s *WhatsappService, soldiers []*Soldier) error {
 }
 
 func sendIfFinished(soldiers []*Soldier, commanderNumber string) func(*WhatsappService, *events.Message) error {
+	fmt.Println("Send If Finished")
 	return func(s *WhatsappService, msg *events.Message) error {
 		if allSoldiersAnswered(soldiers) {
 			s.SendMessage(composeMessage(soldiers), commanderNumber, false)
@@ -109,7 +119,6 @@ func sendIfFinished(soldiers []*Soldier, commanderNumber string) func(*WhatsappS
 
 func printMessage(_ *WhatsappService, msg *events.Message) error {
 	fmt.Printf("--------------------\n%+v\n--------------------\n", msg)
-	fmt.Println(msg.Message.ExtendedTextMessage)
 	return nil
 }
 
@@ -119,6 +128,7 @@ func main() {
 		panic("Error loading .env file")
 	}
 	COMMANDER_NUMBER := os.Getenv("COMMANDER_NUMBER")
+	fmt.Println(COMMANDER_NUMBER)
 	var teamB []*Soldier
 	soldiersFile, err := os.ReadFile("soldiers.json")
 	if err != nil {
@@ -128,6 +138,7 @@ func main() {
 	if err = json.Unmarshal(soldiersFile, &soldiersJson); err != nil {
 		panic(err)
 	}
+	fmt.Printf("%+v\n", soldiersJson)
 	for _, v := range soldiersJson {
 		teamB = append(teamB, &Soldier{
 			name:    v.Name,
@@ -136,11 +147,11 @@ func main() {
 		})
 	}
 	dbLog := waLog.Stdout("Database", "INFO", true)
-	container, err := sqlstore.New("sqlite3", "file:examplestore.db?_foreign_keys=on&_journal_mode=WAL", dbLog)
+	container, err := sqlstore.New(context.Background(), "sqlite3", "file:examplestore.db?_foreign_keys=on&_journal_mode=WAL", dbLog)
 	if err != nil {
 		panic(err)
 	}
-	deviceStore, err := container.GetFirstDevice()
+	deviceStore, err := container.GetFirstDevice(context.Background())
 	if err != nil {
 		panic(err)
 	}
